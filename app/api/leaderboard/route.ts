@@ -1,39 +1,47 @@
 // ============================================================
-// 🔌 API ROUTE — Leaderboard
+// 🔌 API ROUTE — Leaderboard v2
 // Fichier : app/api/leaderboard/route.ts
 //
-// Cette route retourne le classement global des joueurs
-// basé sur leur meilleur temps de jeu.
-//
-// 📌 Endpoint disponible :
-//    GET /api/leaderboard         → Top 10 joueurs
-//    GET /api/leaderboard?limit=5 → Top N joueurs
+// Endpoints :
+//   GET /api/leaderboard                        → classement global
+//   GET /api/leaderboard?difficulty=hard        → filtré par niveau
+//   GET /api/leaderboard?mode=solo              → filtré par mode
+//   GET /api/leaderboard?difficulty=hard&limit=5
 // ============================================================
 
 import { NextRequest, NextResponse } from "next/server";
-import { getLeaderboard } from "@/lib/queries";
+import { getLeaderboard, getLeaderboardByDifficulty } from "@/lib/queries";
+import type { Difficulty } from "@/lib/queries";
+
+// ─────────────────────────────────────────────
+// 🛠️ Formater le temps en string lisible
+//   9  → "9s"
+//   75 → "1m 15s"
+// ─────────────────────────────────────────────
+function formatTime(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${s}s`;
+}
 
 // ─────────────────────────────────────────────
 // 📤 GET /api/leaderboard
 //
-// Retourne le classement trié par meilleur temps
-//
-// Exemples d'appels :
-// fetch("/api/leaderboard")          → top 10
-// fetch("/api/leaderboard?limit=5")  → top 5
+// Paramètres optionnels :
+//   ?difficulty = 'easy' | 'medium' | 'hard'
+//   ?mode       = 'solo' | 'duo' | 'trio'
+//   ?limit      = 1-50 (défaut : 10)
 // ─────────────────────────────────────────────
 export async function GET(request: NextRequest) {
   try {
-    // 1️⃣ Récupération du paramètre optionnel "limit"
     const { searchParams } = new URL(request.url);
-    const limitParam = searchParams.get("limit");
 
-    // 2️⃣ Si limit est fourni → on le convertit, sinon on prend 10 par défaut
+    // ── Paramètre limit
+    const limitParam = searchParams.get("limit");
     let limit = 10;
     if (limitParam) {
       const parsed = parseInt(limitParam, 10);
-
-      // Validation : limit doit être entre 1 et 50
       if (isNaN(parsed) || parsed < 1 || parsed > 50) {
         return NextResponse.json(
           { error: "❌ 'limit' doit être un nombre entre 1 et 50" },
@@ -43,22 +51,53 @@ export async function GET(request: NextRequest) {
       limit = parsed;
     }
 
-    // 3️⃣ Récupération du leaderboard depuis la vue NeonDB
-    const entries = await getLeaderboard(limit);
+    // ── Paramètre difficulty
+    const difficulty = searchParams.get("difficulty");
+    const VALID_DIFFICULTIES = ["easy", "medium", "hard"];
+    if (difficulty && !VALID_DIFFICULTIES.includes(difficulty)) {
+      return NextResponse.json(
+        { error: "❌ 'difficulty' doit être 'easy', 'medium' ou 'hard'" },
+        { status: 400 }
+      );
+    }
 
-    // 4️⃣ On formate les données pour le frontend
-    // On ajoute un rang (position) à chaque entrée
+    // ── Paramètre mode (solo = 1 objet, duo = 2, trio = 3)
+    const mode = searchParams.get("mode");
+    const VALID_MODES = ["solo", "duo", "trio"];
+    if (mode && !VALID_MODES.includes(mode)) {
+      return NextResponse.json(
+        { error: "❌ 'mode' doit être 'solo', 'duo' ou 'trio'" },
+        { status: 400 }
+      );
+    }
+
+    // ── Appel DB selon les filtres
+    // Si difficulty fourni → vue leaderboard_by_difficulty (avec RANK())
+    // Sinon → vue leaderboard globale
+    const entries = difficulty
+      ? await getLeaderboardByDifficulty(difficulty as Difficulty, limit)
+      : await getLeaderboard(limit);
+
+    // ── Formatage des données pour le frontend
     const ranked = entries.map((entry, index) => ({
-      rank: index + 1,        // 1er, 2ème, 3ème...
+      rank: entry.rank_in_difficulty ?? index + 1, // Rang SQL ou rang calculé
       ...entry,
-      // Formatage du temps en "Xm Xs" si > 60 secondes
+      // SOLO → on formate le temps  |  DUO/TRIO → on formate le score
       best_time_formatted: formatTime(entry.best_time),
+      // Label du mode déduit du nb d'objets
+      mode_label: entry.objects_count === 1 ? "SOLO"
+                : entry.objects_count === 2 ? "DUO"
+                : "TRIO",
     }));
 
-    // 5️⃣ Réponse finale
     return NextResponse.json({
       success: true,
       count: ranked.length,
+      filters: {
+        difficulty: difficulty || "all",
+        mode: mode || "all",
+        limit,
+      },
       leaderboard: ranked,
     });
 
@@ -69,21 +108,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-// ─────────────────────────────────────────────
-// 🛠️ FONCTION UTILITAIRE — Formater le temps
-// Convertit un nombre de secondes en string lisible
-//
-// Exemples :
-//   formatTime(9)  → "9s"
-//   formatTime(75) → "1m 15s"
-// ─────────────────────────────────────────────
-function formatTime(seconds: number): string {
-  if (seconds < 60) {
-    return `${seconds}s`;
-  }
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  return `${minutes}m ${remainingSeconds}s`;
 }

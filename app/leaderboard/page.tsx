@@ -1,27 +1,32 @@
 "use client";
 
 // ============================================================
-// 🏆 PAGE LEADERBOARD — Classement des joueurs
+// 🏆 PAGE LEADERBOARD — v2
 // Fichier : app/leaderboard/page.tsx
 //
-// Cette page affiche le classement global des joueurs
-// en récupérant les données depuis /api/leaderboard
-//
-// Concepts utilisés :
-// - fetch() vers une API Route Next.js
-// - useState / useEffect pour charger les données
-// - Rendu conditionnel (loading, erreur, données)
+// Nouveautés v2 :
+// - Onglets par difficulté : TOUS / FACILE / MOYEN / DIFFICILE
+// - Badge mode de jeu (SOLO / DUO / TRIO) sur chaque ligne
+// - Icône du joueur (image ou emoji fallback)
+// - Colonne adaptée : temps (SOLO) ou score (DUO/TRIO)
 // ============================================================
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
+import Link from "next/link";
 
 // ─────────────────────────────────────────────
-// 📦 TYPE — Structure d'une entrée du classement
-// Correspond exactement à ce que retourne l'API
+// 📦 TYPES
 // ─────────────────────────────────────────────
+type Difficulty = "all" | "easy" | "medium" | "hard";
+
 type LeaderboardEntry = {
   rank: number;
   username: string;
+  selected_icon: string;
+  difficulty: string;
+  objects_count: number;
+  mode_label: string;
   best_time: number;
   best_time_formatted: string;
   best_score: number;
@@ -30,140 +35,164 @@ type LeaderboardEntry = {
 };
 
 // ─────────────────────────────────────────────
-// 🥇 COMPOSANT — Médaille selon le rang
-// Retourne une médaille emoji pour le top 3
+// 📐 CONSTANTES — Onglets de difficulté
+// ─────────────────────────────────────────────
+const DIFFICULTY_TABS = [
+  { key: "all",    label: "TOUS",      emoji: "🏆", color: "#facc15" },
+  { key: "easy",   label: "FACILE",    emoji: "🟢", color: "#4ade80" },
+  { key: "medium", label: "MOYEN",     emoji: "🟡", color: "#facc15" },
+  { key: "hard",   label: "DIFFICILE", emoji: "🔴", color: "#f87171" },
+];
+
+const MODE_COLORS: Record<string, string> = {
+  SOLO: "#22d3ee",
+  DUO:  "#a78bfa",
+  TRIO: "#f97316",
+};
+
+// ─────────────────────────────────────────────
+// 🥇 Médaille selon le rang
 // ─────────────────────────────────────────────
 function RankBadge({ rank }: { rank: number }) {
-  if (rank === 1) return <span className="text-3xl">🥇</span>;
-  if (rank === 2) return <span className="text-3xl">🥈</span>;
-  if (rank === 3) return <span className="text-3xl">🥉</span>;
+  if (rank === 1) return <span className="text-2xl">🥇</span>;
+  if (rank === 2) return <span className="text-2xl">🥈</span>;
+  if (rank === 3) return <span className="text-2xl">🥉</span>;
   return (
-    <span className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-700 text-slate-300 font-bold text-sm">
+    <span className="w-7 h-7 flex items-center justify-center rounded-full bg-slate-700 text-slate-300 font-bold text-xs">
       {rank}
     </span>
   );
 }
 
 // ─────────────────────────────────────────────
-// ⏳ COMPOSANT — Skeleton de chargement
-// Affiché pendant que les données arrivent
-// Donne l'impression que la page charge proprement
+// ⏳ Skeleton de chargement
 // ─────────────────────────────────────────────
 function SkeletonRow() {
   return (
-    <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-800/50 animate-pulse">
-      <div className="w-8 h-8 rounded-full bg-slate-700" />
+    <div className="flex items-center gap-3 p-4 rounded-xl bg-slate-800/50 animate-pulse">
+      <div className="w-7 h-7 rounded-full bg-slate-700 shrink-0" />
+      <div className="w-8 h-8 rounded-lg bg-slate-700 shrink-0" />
       <div className="flex-1 h-4 rounded bg-slate-700" />
-      <div className="w-16 h-4 rounded bg-slate-700" />
-      <div className="w-16 h-4 rounded bg-slate-700" />
-      <div className="w-12 h-4 rounded bg-slate-700" />
+      <div className="w-14 h-4 rounded bg-slate-700" />
+      <div className="w-14 h-4 rounded bg-slate-700" />
+      <div className="w-10 h-4 rounded bg-slate-700" />
     </div>
   );
 }
 
 // ─────────────────────────────────────────────
-// 🏆 COMPOSANT PRINCIPAL — Leaderboard
+// 🏆 COMPOSANT PRINCIPAL
 // ─────────────────────────────────────────────
 export default function LeaderboardPage() {
 
-  // ── États ─────────────────────────────────
-  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(true);   // Chargement en cours ?
-  const [error, setError] = useState<string | null>(null); // Message d'erreur éventuel
-  const [lastUpdated, setLastUpdated] = useState<string>(""); // Heure du dernier refresh
+  const [entries, setEntries]         = useState<LeaderboardEntry[]>([]);
+  const [isLoading, setIsLoading]     = useState(true);
+  const [error, setError]             = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState("");
+  const [activeTab, setActiveTab]     = useState<Difficulty>("all"); // Onglet actif
 
-  // ─────────────────────────────────────────
-  // 📡 FONCTION — Charger le leaderboard
-  // Fait un appel GET vers /api/leaderboard
-  // ─────────────────────────────────────────
-  const fetchLeaderboard = async () => {
+  // ── Charger le leaderboard selon l'onglet actif
+  const fetchLeaderboard = async (difficulty: Difficulty = activeTab) => {
     try {
       setIsLoading(true);
       setError(null);
 
-      // Appel à notre API Route Next.js
-      const response = await fetch("/api/leaderboard?limit=10");
+      // Si "all" → pas de filtre | sinon → filtre par difficulté
+      const url = difficulty === "all"
+        ? "/api/leaderboard?limit=10"
+        : `/api/leaderboard?difficulty=${difficulty}&limit=10`;
 
-      // Vérification que la réponse est OK (status 200-299)
-      if (!response.ok) {
-        throw new Error(`Erreur HTTP : ${response.status}`);
-      }
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Erreur HTTP : ${res.status}`);
 
-      const data = await response.json();
-
-      // Mise à jour des données dans le state
+      const data = await res.json();
       setEntries(data.leaderboard);
-
-      // Enregistre l'heure du dernier chargement
       setLastUpdated(new Date().toLocaleTimeString("fr-FR"));
 
     } catch (err) {
-      console.error("❌ Erreur fetchLeaderboard :", err);
+      console.error("❌ Erreur leaderboard :", err);
       setError("Impossible de charger le classement. Vérifie ta connexion.");
     } finally {
-      // finally = exécuté TOUJOURS, même en cas d'erreur
       setIsLoading(false);
     }
   };
 
-  // ─────────────────────────────────────────
-  // ⏱️ EFFET — Chargement initial + auto-refresh
-  // Le leaderboard se recharge automatiquement
-  // toutes les 30 secondes pour rester à jour
-  // ─────────────────────────────────────────
+  // ── Chargement initial + auto-refresh 30s
   useEffect(() => {
-    // Chargement initial
     fetchLeaderboard();
+    const id = setInterval(() => fetchLeaderboard(), 30000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    // Auto-refresh toutes les 30 secondes
-    const refreshInterval = setInterval(fetchLeaderboard, 30000);
+  // ── Rechargement quand l'onglet change
+  const handleTabChange = (tab: Difficulty) => {
+    setActiveTab(tab);
+    fetchLeaderboard(tab);
+  };
 
-    // Nettoyage de l'intervalle au démontage du composant
-    return () => clearInterval(refreshInterval);
-  }, []); // [] = s'exécute une seule fois au montage
+  // ── Titre de la colonne principale selon les données
+  // SOLO → on trie par temps | DUO/TRIO → on trie par score
+  const hasOnlySolo = entries.every(e => e.objects_count === 1);
+  const mainColLabel = activeTab === "all"
+    ? "Meilleur" : hasOnlySolo ? "⏱ Temps" : "🎯 Score";
 
-  // ─────────────────────────────────────────
-  // 🎨 RENDU
-  // ─────────────────────────────────────────
   return (
     <main className="min-h-screen bg-[#0f172a] text-white font-mono">
 
-      {/* ── En-tête ──────────────────────── */}
-      <header className="bg-[#1e293b] border-b border-slate-700 px-6 py-5">
+      {/* ── En-tête ── */}
+      <header className="bg-[#1e293b] border-b border-slate-700 px-4 py-4">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
-
-          {/* Titre + sous-titre */}
           <div>
             <h1 className="text-2xl font-black text-yellow-400 tracking-widest uppercase">
               🏆 Leaderboard
             </h1>
-            <p className="text-slate-400 text-sm mt-1">
-              Classement par meilleur temps
+            <p className="text-slate-400 text-xs mt-1">
+              Classement global · toutes difficultés
             </p>
           </div>
-
-          {/* Bouton refresh manuel */}
           <button
-            onClick={fetchLeaderboard}
+            onClick={() => fetchLeaderboard(activeTab)}
             disabled={isLoading}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {/* L'icône tourne pendant le chargement */}
             <span className={isLoading ? "animate-spin" : ""}>🔄</span>
             Actualiser
           </button>
         </div>
       </header>
 
-      {/* ── Contenu principal ─────────────── */}
-      <div className="max-w-2xl mx-auto px-4 py-8">
+      <div className="max-w-2xl mx-auto px-4 py-6">
 
-        {/* ── CAS 1 : Erreur ──────────────── */}
+        {/* ── Onglets de difficulté ── */}
+        <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
+          {DIFFICULTY_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => handleTabChange(tab.key as Difficulty)}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider whitespace-nowrap transition-all duration-200 hover:scale-105 active:scale-95 shrink-0"
+              style={{
+                background: activeTab === tab.key
+                  ? `${tab.color}22`
+                  : "rgba(30,41,59,0.8)",
+                border: activeTab === tab.key
+                  ? `2px solid ${tab.color}`
+                  : "2px solid rgba(100,116,139,0.2)",
+                color: activeTab === tab.key ? tab.color : "#64748b",
+              }}
+            >
+              <span>{tab.emoji}</span>
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* ── Erreur ── */}
         {error && (
           <div className="bg-red-900/30 border border-red-500/50 rounded-xl p-4 mb-6 text-center">
             <p className="text-red-400">⚠️ {error}</p>
             <button
-              onClick={fetchLeaderboard}
+              onClick={() => fetchLeaderboard(activeTab)}
               className="mt-3 px-4 py-2 bg-red-500 hover:bg-red-400 text-white rounded-lg text-sm transition-colors"
             >
               Réessayer
@@ -171,123 +200,163 @@ export default function LeaderboardPage() {
           </div>
         )}
 
-        {/* ── CAS 2 : Chargement ──────────── */}
+        {/* ── Chargement ── */}
         {isLoading && (
           <div className="space-y-3">
-            {/* On affiche 5 squelettes pendant le chargement */}
-            {Array.from({ length: 5 }).map((_, i) => (
-              <SkeletonRow key={i} />
-            ))}
+            {Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)}
           </div>
         )}
 
-        {/* ── CAS 3 : Données chargées ─────── */}
+        {/* ── Données ── */}
         {!isLoading && !error && (
-
           <>
-            {/* Aucun joueur encore */}
             {entries.length === 0 ? (
+              // Aucune partie pour ce filtre
               <div className="text-center py-20">
-                <p className="text-6xl mb-4">🎮</p>
+                <p className="text-5xl mb-4">🎮</p>
                 <p className="text-slate-400 text-lg">
-                  Aucune partie jouée pour l&apos;instant.
+                  {activeTab === "all"
+                    ? "Aucune partie jouée pour l'instant."
+                    : `Aucune partie en difficulté ${activeTab}.`}
                 </p>
-                <a
-                  href="/game"
+                <Link
+                  href="/"
                   className="inline-block mt-4 px-6 py-3 bg-yellow-400 text-black font-black rounded-xl hover:bg-yellow-300 transition-colors"
                 >
                   Être le premier ! 🚀
-                </a>
+                </Link>
               </div>
             ) : (
+              <div className="space-y-2">
 
-              <div className="space-y-3">
-
-                {/* ── En-tête du tableau ─────── */}
-                <div className="grid grid-cols-12 gap-2 px-4 pb-2 text-xs text-slate-500 uppercase tracking-widest">
+                {/* En-tête colonnes */}
+                <div className="grid grid-cols-12 gap-2 px-3 pb-2 text-xs text-slate-500 uppercase tracking-widest">
                   <div className="col-span-1">#</div>
+                  <div className="col-span-1"></div>
                   <div className="col-span-4">Joueur</div>
-                  <div className="col-span-3 text-center">⏱ Temps</div>
-                  <div className="col-span-2 text-center">🎯 Score</div>
-                  <div className="col-span-2 text-center">🎮 Parties</div>
+                  <div className="col-span-2 text-center">Mode</div>
+                  <div className="col-span-2 text-center">{mainColLabel}</div>
+                  <div className="col-span-2 text-center">Parties</div>
                 </div>
 
-                {/* ── Lignes du classement ───── */}
-                {entries.map((entry) => (
-                  <div
-                    key={entry.rank}
-                    className={`
-                      grid grid-cols-12 gap-2 items-center
-                      px-4 py-4 rounded-xl border transition-all duration-200
-                      hover:scale-[1.01] hover:shadow-lg
-                      ${entry.rank === 1
-                        ? "bg-yellow-400/10 border-yellow-400/40 shadow-yellow-400/10"
-                        : entry.rank === 2
-                        ? "bg-slate-400/10 border-slate-400/30"
-                        : entry.rank === 3
-                        ? "bg-orange-400/10 border-orange-400/30"
-                        : "bg-slate-800/50 border-slate-700/50"
-                      }
-                    `}
-                  >
-                    {/* Rang / Médaille */}
-                    <div className="col-span-1 flex justify-center">
-                      <RankBadge rank={entry.rank} />
-                    </div>
+                {/* Lignes */}
+                {entries.map((entry) => {
+                  const modeColor = MODE_COLORS[entry.mode_label] || "#facc15";
+                  const isSolo    = entry.objects_count === 1;
 
-                    {/* Pseudo du joueur */}
-                    <div className="col-span-4">
-                      <p className={`font-bold truncate ${
-                        entry.rank === 1 ? "text-yellow-400" :
-                        entry.rank === 2 ? "text-slate-300" :
-                        entry.rank === 3 ? "text-orange-400" : "text-white"
-                      }`}>
-                        {entry.username}
-                      </p>
-                    </div>
+                  return (
+                    <div
+                      key={`${entry.username}-${entry.difficulty}-${entry.objects_count}`}
+                      className="grid grid-cols-12 gap-2 items-center px-3 py-3 rounded-xl border transition-all hover:scale-[1.01]"
+                      style={{
+                        background: entry.rank === 1 ? "rgba(250,204,21,0.08)"
+                                  : entry.rank === 2 ? "rgba(148,163,184,0.08)"
+                                  : entry.rank === 3 ? "rgba(251,146,60,0.08)"
+                                  : "rgba(30,41,59,0.5)",
+                        borderColor: entry.rank === 1 ? "rgba(250,204,21,0.3)"
+                                   : entry.rank === 2 ? "rgba(148,163,184,0.2)"
+                                   : entry.rank === 3 ? "rgba(251,146,60,0.2)"
+                                   : "rgba(100,116,139,0.15)",
+                      }}
+                    >
+                      {/* Rang */}
+                      <div className="col-span-1 flex justify-center">
+                        <RankBadge rank={entry.rank} />
+                      </div>
 
-                    {/* Meilleur temps */}
-                    <div className="col-span-3 text-center">
-                      <span className="text-cyan-400 font-black">
-                        {entry.best_time_formatted}
-                      </span>
-                    </div>
+                      {/* Icône joueur */}
+                      <div className="col-span-1 flex justify-center">
+                        {entry.selected_icon && entry.selected_icon !== "target.png" ? (
+                          <Image
+                            src={`/icons/${entry.selected_icon}`}
+                            alt="icône"
+                            width={28}
+                            height={28}
+                            className="object-contain rounded"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.display = "none";
+                            }}
+                          />
+                        ) : (
+                          <span className="text-lg">🎯</span>
+                        )}
+                      </div>
 
-                    {/* Meilleur score */}
-                    <div className="col-span-2 text-center">
-                      <span className="text-white font-bold">
-                        {entry.best_score}
-                      </span>
-                    </div>
+                      {/* Pseudo */}
+                      <div className="col-span-4">
+                        <p
+                          className="font-bold truncate text-sm"
+                          style={{
+                            color: entry.rank === 1 ? "#facc15"
+                                 : entry.rank === 2 ? "#cbd5e1"
+                                 : entry.rank === 3 ? "#fb923c"
+                                 : "#ffffff",
+                          }}
+                        >
+                          {entry.username}
+                        </p>
+                        {/* Difficulté sous le pseudo */}
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {entry.difficulty}
+                        </p>
+                      </div>
 
-                    {/* Nombre de parties */}
-                    <div className="col-span-2 text-center">
-                      <span className="text-slate-400 text-sm">
-                        {entry.total_games}
-                      </span>
+                      {/* Badge mode SOLO / DUO / TRIO */}
+                      <div className="col-span-2 flex justify-center">
+                        <span
+                          className="text-xs font-black px-2 py-0.5 rounded-full"
+                          style={{
+                            background: `${modeColor}22`,
+                            color: modeColor,
+                            border: `1px solid ${modeColor}44`,
+                          }}
+                        >
+                          {entry.mode_label}
+                        </span>
+                      </div>
+
+                      {/* Temps (SOLO) ou Score (DUO/TRIO) */}
+                      <div className="col-span-2 text-center">
+                        {isSolo ? (
+                          <span className="text-cyan-400 font-black text-sm">
+                            {entry.best_time_formatted}
+                          </span>
+                        ) : (
+                          <span className="font-black text-sm" style={{ color: modeColor }}>
+                            {entry.best_score} pts
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Nb de parties */}
+                      <div className="col-span-2 text-center">
+                        <span className="text-slate-400 text-sm">
+                          {entry.total_games}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
             {/* Dernière mise à jour */}
             {lastUpdated && (
               <p className="text-center text-slate-600 text-xs mt-6">
-                Dernière mise à jour : {lastUpdated} · Refresh auto toutes les 30s
+                Mis à jour à {lastUpdated} · Refresh auto toutes les 30s
               </p>
             )}
           </>
         )}
 
-        {/* ── Bouton retour au jeu ─────────── */}
-        <div className="text-center mt-10">
-          <a
-            href="/game"
-            className="inline-flex items-center gap-2 px-8 py-3 bg-yellow-400 hover:bg-yellow-300 text-black font-black rounded-xl transition-all duration-200 hover:scale-105 active:scale-95"
+        {/* Bouton retour */}
+        <div className="text-center mt-8">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 px-8 py-3 bg-yellow-400 hover:bg-yellow-300 text-black font-black rounded-xl transition-all hover:scale-105 active:scale-95"
           >
             🎯 Jouer
-          </a>
+          </Link>
         </div>
 
       </div>

@@ -16,52 +16,54 @@ import { saveGame, getGamesByUser } from "@/lib/queries";
 // ─────────────────────────────────────────────
 // 📥 POST /api/scores
 //
-// Appelé à la fin d'une partie pour sauvegarder
-// le score, le temps et les clics du joueur.
-//
 // Body attendu :
 // {
 //   "userId": 1,
 //   "score": 5,
 //   "timeSeconds": 12,
-//   "clicksTotal": 7
+//   "clicksTotal": 7,
+//   "difficulty": "hard",    ← nouveau
+//   "objectsCount": 1        ← nouveau
 // }
 // ─────────────────────────────────────────────
 export async function POST(request: NextRequest) {
   try {
-    // 1️⃣ Lecture du body JSON
     const body = await request.json();
-    const { userId, score, timeSeconds, clicksTotal } = body;
+    const { userId, score, timeSeconds, clicksTotal, difficulty = "easy", objectsCount = 1 } = body;
 
-    // 2️⃣ Validation — tous les champs sont obligatoires
-    if (
-      !userId ||
-      score === undefined ||
-      timeSeconds === undefined ||
-      clicksTotal === undefined
-    ) {
+    // Validation — champs obligatoires
+    if (!userId || score === undefined || timeSeconds === undefined || clicksTotal === undefined) {
       return NextResponse.json(
-        {
-          error: "❌ Champs obligatoires manquants : userId, score, timeSeconds, clicksTotal",
-        },
+        { error: "❌ Champs obligatoires manquants : userId, score, timeSeconds, clicksTotal" },
         { status: 400 }
       );
     }
 
-    // 3️⃣ Validation des types — tout doit être un nombre
-    if (
-      typeof userId !== "number" ||
-      typeof score !== "number" ||
-      typeof timeSeconds !== "number" ||
-      typeof clicksTotal !== "number"
-    ) {
+    // Validation des types
+    if (typeof userId !== "number" || typeof score !== "number" ||
+        typeof timeSeconds !== "number" || typeof clicksTotal !== "number") {
       return NextResponse.json(
-        { error: "❌ Tous les champs doivent être des nombres" },
+        { error: "❌ userId, score, timeSeconds, clicksTotal doivent être des nombres" },
         { status: 400 }
       );
     }
 
-    // 4️⃣ Validation métier — valeurs cohérentes
+    // Validation difficulté
+    if (!["easy", "medium", "hard"].includes(difficulty)) {
+      return NextResponse.json(
+        { error: "❌ difficulty doit être 'easy', 'medium' ou 'hard'" },
+        { status: 400 }
+      );
+    }
+
+    // Validation objectsCount
+    if (typeof objectsCount !== "number" || objectsCount < 1 || objectsCount > 5) {
+      return NextResponse.json(
+        { error: "❌ objectsCount doit être entre 1 et 5" },
+        { status: 400 }
+      );
+    }
+
     if (timeSeconds <= 0 || score < 0) {
       return NextResponse.json(
         { error: "❌ Le temps doit être positif et le score valide" },
@@ -69,23 +71,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 5️⃣ Sauvegarde en base de données
-    const game = await saveGame(userId, score, timeSeconds, clicksTotal);
+    // Sauvegarde avec les nouveaux champs
+    const game = await saveGame(userId, score, timeSeconds, clicksTotal, difficulty, objectsCount);
 
-    // 6️⃣ Réponse avec la partie sauvegardée
-    return NextResponse.json(
-      { success: true, game },
-      { status: 201 } // 201 = Created
-    );
+    return NextResponse.json({ success: true, game }, { status: 201 });
 
   } catch (error) {
     console.error("❌ Erreur POST /api/scores :", error);
-    return NextResponse.json(
-      { error: "Erreur serveur interne" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Erreur serveur interne" }, { status: 500 });
   }
 }
+
 
 // ─────────────────────────────────────────────
 // 📤 GET /api/scores?userId=1

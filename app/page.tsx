@@ -14,6 +14,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 // Polices définies comme constantes pour éviter la répétition
 const FONT_ARCADE = "'Black Ops One', cursive";
@@ -24,16 +25,159 @@ const FONT_MONO   = "'Share Tech Mono', monospace";
 // Chaque logo a un emoji, un nom et une couleur d'accent
 // Pour en ajouter : copie un objet et change les valeurs
 // ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// 🖼️ LOGOS — icônes du jeu
+// emoji    : fallback si l'image ne charge pas
+// image    : chemin dans /public/icons/
+// name     : nom affiché sous le sélecteur
+// color    : couleur d'accent du logo
+// shadow   : ombre colorée autour du logo
+//
+// 📌 Dépose tes fichiers dans : public/icons/
+// ─────────────────────────────────────────────
 const LOGOS = [
-  { emoji: "🎯", name: "Cible",   color: "#facc15", shadow: "rgba(250,204,21,0.5)"  },
-  { emoji: "🚀", name: "Fusée",   color: "#22d3ee", shadow: "rgba(34,211,238,0.5)"  },
-  { emoji: "⭐", name: "Étoile",  color: "#a78bfa", shadow: "rgba(167,139,250,0.5)" },
-  { emoji: "🔥", name: "Feu",     color: "#f97316", shadow: "rgba(249,115,22,0.5)"  },
-  { emoji: "💎", name: "Diamant", color: "#34d399", shadow: "rgba(52,211,153,0.5)"  },
+  { emoji: "🎯", image: "/icons/target.png",  name: "Cible",   color: "#facc15", shadow: "rgba(250,204,21,0.5)"  },
+  { emoji: "🚀", image: "/icons/rocket.png",  name: "Fusée",   color: "#22d3ee", shadow: "rgba(34,211,238,0.5)"  },
+  { emoji: "⭐", image: "/icons/star.png",    name: "Étoile",  color: "#a78bfa", shadow: "rgba(167,139,250,0.5)" },
+  { emoji: "🔥", image: "/icons/fire.png",    name: "Feu",     color: "#f97316", shadow: "rgba(249,115,22,0.5)"  },
+  { emoji: "💎", image: "/icons/diamond.png", name: "Diamant", color: "#34d399", shadow: "rgba(52,211,153,0.5)"  },
 ];
 
 // ─────────────────────────────────────────────
-// 🎲 COMPOSANT — Particule flottante
+// 🎵 MUSIQUES DISPONIBLES
+// key         : identifiant passé dans l'URL
+// label       : nom affiché
+// emoji       : icône visuelle
+// color       : couleur d'accent
+// description : ambiance de la musique
+//
+// 📌 Dépose tes fichiers dans : public/sounds/
+//    → arcade.mp3 / lofi.mp3 / epic.mp3
+// ─────────────────────────────────────────────
+const MUSIC_TRACKS = [
+  {
+    key:         "arcade",
+    label:       "ARCADE",
+    emoji:       "🎮",
+    color:       "#facc15",
+    border:      "rgba(250,204,21,0.4)",
+    shadow:      "rgba(250,204,21,0.3)",
+    description: "Rétro & fun",
+  },
+  {
+    key:         "lofi",
+    label:       "LO-FI",
+    emoji:       "🎵",
+    color:       "#22d3ee",
+    border:      "rgba(34,211,238,0.4)",
+    shadow:      "rgba(34,211,238,0.3)",
+    description: "Chill & focus",
+  },
+  {
+    key:         "epic",
+    label:       "EPIC",
+    emoji:       "⚔️",
+    color:       "#f87171",
+    border:      "rgba(248,113,113,0.4)",
+    shadow:      "rgba(248,113,113,0.3)",
+    description: "Intense & rapide",
+  },
+];
+
+// ─────────────────────────────────────────────
+// 🎮 NIVEAUX DE DIFFICULTÉ
+// Chaque niveau définit :
+//   - label      : nom affiché
+//   - emoji      : icône visuelle
+//   - color      : couleur d'accent
+//   - description: ce qui change pour le joueur
+//   - moveInterval: vitesse de déplacement (ms) — plus bas = plus rapide
+//   - logoSize   : taille du logo (px) — plus petit = plus dur à cliquer
+// ─────────────────────────────────────────────
+const DIFFICULTIES = [
+  {
+    key:          "easy",
+    label:        "FACILE",
+    emoji:        "🟢",
+    color:        "#4ade80",
+    border:       "rgba(74,222,128,0.4)",
+    shadow:       "rgba(74,222,128,0.3)",
+    description:  "Logo lent et grand",
+    moveInterval: 1800,   // 1.8s entre chaque déplacement
+    logoSize:     90,     // Grand logo facile à cliquer
+  },
+  {
+    key:          "medium",
+    label:        "MOYEN",
+    emoji:        "🟡",
+    color:        "#facc15",
+    border:       "rgba(250,204,21,0.4)",
+    shadow:       "rgba(250,204,21,0.3)",
+    description:  "Logo normal",
+    moveInterval: 1200,   // 1.2s — valeur par défaut originale
+    logoSize:     80,     // Taille standard
+  },
+  {
+    key:          "hard",
+    label:        "DIFFICILE",
+    emoji:        "🔴",
+    color:        "#f87171",
+    border:       "rgba(248,113,113,0.4)",
+    shadow:       "rgba(248,113,113,0.3)",
+    description:  "Logo rapide et petit",
+    moveInterval: 700,    // 0.7s — très rapide !
+    logoSize:     60,     // Petit logo difficile à cliquer
+  },
+];
+
+// ─────────────────────────────────────────────
+// 🕹️ MODES DE JEU
+// Définit le nombre d'objets simultanés et la règle de victoire
+//
+// SOLO  → 1 objet  → Chrono : faire le temps le plus COURT (5 clics)
+// DUO   → 2 objets → Compte à rebours 30s : max de clics
+// TRIO  → 3 objets → Compte à rebours 30s : max de clics
+// ─────────────────────────────────────────────
+const GAME_MODES = [
+  {
+    key:         "solo",
+    label:       "SOLO",
+    objects:     1,
+    color:       "#22d3ee",
+    border:      "rgba(34,211,238,0.4)",
+    shadow:      "rgba(34,211,238,0.3)",
+    emoji:       "🎯",
+    rule:        "Temps le plus court",
+    description: "5 clics · chrono",
+    timeLimit:   null,   // Pas de limite — on bat le chrono
+  },
+  {
+    key:         "duo",
+    label:       "DUO",
+    objects:     2,
+    color:       "#a78bfa",
+    border:      "rgba(167,139,250,0.4)",
+    shadow:      "rgba(167,139,250,0.3)",
+    emoji:       "🎯🎯",
+    rule:        "Max de clics en 30s",
+    description: "2 objets · 30s",
+    timeLimit:   30,    // 30 secondes
+  },
+  {
+    key:         "trio",
+    label:       "TRIO",
+    objects:     3,
+    color:       "#f97316",
+    border:      "rgba(249,115,22,0.4)",
+    shadow:      "rgba(249,115,22,0.3)",
+    emoji:       "🎯🎯🎯",
+    rule:        "Max de clics en 30s",
+    description: "3 objets · 30s",
+    timeLimit:   30,
+  },
+];
+
+
 // Petits points lumineux animés en arrière-plan
 // Chaque particule a une position et vitesse aléatoire
 // ─────────────────────────────────────────────
@@ -92,10 +236,23 @@ export default function HomePage() {
   // État pour l'effet de "glitch" sur le titre
   const [glitch, setGlitch] = useState(false);
 
+  // ── Musique sélectionnée (arcade par défaut)
+  const [selectedMusicIndex, setSelectedMusicIndex] = useState(0);
+  const selectedMusic = MUSIC_TRACKS[selectedMusicIndex];
+
+  // ── Mode de jeu sélectionné (SOLO par défaut)
+  const [selectedModeIndex, setSelectedModeIndex] = useState(0);
+  const selectedMode = GAME_MODES[selectedModeIndex];
+
   // ── Logo sélectionné par le joueur (index dans LOGOS)
   // Par défaut : le premier logo (🎯)
   const [selectedIndex, setSelectedIndex] = useState(0);
   const selectedLogo = LOGOS[selectedIndex];
+
+  // ── Difficulté sélectionnée par le joueur
+  // Par défaut : "medium" (index 1)
+  const [selectedDiffIndex, setSelectedDiffIndex] = useState(1);
+  const selectedDiff = DIFFICULTIES[selectedDiffIndex];
 
   // ── Effet glitch automatique toutes les 4 secondes
   useEffect(() => {
@@ -302,12 +459,86 @@ export default function HomePage() {
             </p>
           </div>
 
-          {/* ── Sélecteur de logos ───────────────
-              Le joueur clique sur un logo pour le choisir
-              Le logo sélectionné est mis en surbrillance
+          {/* ── Sélecteur de MODE DE JEU ────────
+              ÉTAPE 1 — Affiché EN PREMIER
+              SOLO / DUO / TRIO
           ── */}
           <div
-            className="flex gap-3 mb-8"
+            className="w-full max-w-sm mb-6"
+            style={{ animation: "fadeSlideUp 0.5s 0.38s both" }}
+          >
+            <p
+              className="text-slate-500 text-xs uppercase tracking-widest mb-3 text-center"
+              style={{ fontFamily: FONT_MONO }}
+            >
+              ① Mode de jeu
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {GAME_MODES.map((mode, index) => (
+                <button
+                  key={mode.key}
+                  onClick={() => setSelectedModeIndex(index)}
+                  className="relative flex flex-col items-center gap-1 py-3 px-2 rounded-xl transition-all duration-200 hover:scale-105 active:scale-95"
+                  style={{
+                    background: selectedModeIndex === index
+                      ? `${mode.color}18`
+                      : "rgba(30,41,59,0.8)",
+                    border: selectedModeIndex === index
+                      ? `2px solid ${mode.border}`
+                      : "2px solid rgba(100,116,139,0.2)",
+                    boxShadow: selectedModeIndex === index
+                      ? `0 0 14px ${mode.shadow}`
+                      : "none",
+                  }}
+                >
+                  {/* Emojis objets */}
+                  <span className="text-base tracking-tighter">{mode.emoji}</span>
+
+                  {/* Nom du mode */}
+                  <span
+                    className="text-xs font-black tracking-wider"
+                    style={{
+                      fontFamily: FONT_MONO,
+                      color: selectedModeIndex === index ? mode.color : "#64748b",
+                    }}
+                  >
+                    {mode.label}
+                  </span>
+
+                  {/* Règle courte */}
+                  <span
+                    className="leading-tight text-center"
+                    style={{ fontFamily: FONT_MONO, color: "#475569", fontSize: "9px" }}
+                  >
+                    {mode.description}
+                  </span>
+
+                  {/* Point sélection */}
+                  {selectedModeIndex === index && (
+                    <span
+                      className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full"
+                      style={{ background: mode.color }}
+                    />
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Règle du mode sélectionné — ligne d'explication */}
+            <p
+              className="text-center text-xs mt-2"
+              style={{ fontFamily: FONT_MONO, color: selectedMode.color }}
+            >
+              {selectedMode.rule}
+            </p>
+          </div>
+
+          {/* ── Sélecteur de logos ② ────────────
+              Images PNG depuis /public/icons/
+              Fallback emoji si image non trouvée
+          ── */}
+          <div
+            className="flex gap-3 mb-6"
             style={{ animation: "fadeSlideUp 0.5s 0.42s both" }}
           >
             {LOGOS.map((logo, index) => (
@@ -315,12 +546,10 @@ export default function HomePage() {
                 key={index}
                 onClick={() => setSelectedIndex(index)}
                 aria-label={`Choisir le logo ${logo.name}`}
-                className="relative w-14 h-14 rounded-xl flex items-center justify-center text-2xl transition-all duration-200 hover:scale-110 active:scale-95"
+                className="relative w-14 h-14 rounded-xl flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 overflow-hidden"
                 style={{
-                  // Si sélectionné → bordure colorée + fond teinté
-                  // Sinon → fond neutre sombre
                   background: selectedIndex === index
-                    ? `${logo.color}22`  // couleur avec 13% d'opacité
+                    ? `${logo.color}22`
                     : "rgba(30,41,59,0.8)",
                   border: selectedIndex === index
                     ? `2px solid ${logo.color}`
@@ -330,9 +559,25 @@ export default function HomePage() {
                     : "none",
                 }}
               >
-                {logo.emoji}
+                {/* Image PNG — avec fallback emoji si absente */}
+                <Image
+                  src={logo.image}
+                  alt={logo.name}
+                  width={36}
+                  height={36}
+                  className="object-contain"
+                  onError={(e) => {
+                    // Si l'image ne charge pas → on affiche l'emoji
+                    const target = e.currentTarget as HTMLImageElement;
+                    target.style.display = "none";
+                    const fallback = target.nextSibling as HTMLElement;
+                    if (fallback) fallback.style.display = "block";
+                  }}
+                />
+                {/* Emoji fallback — caché par défaut */}
+                <span className="text-2xl hidden absolute">{logo.emoji}</span>
 
-                {/* Indicateur de sélection — petit point en bas */}
+                {/* Point indicateur si sélectionné */}
                 {selectedIndex === index && (
                   <span
                     className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full"
@@ -343,38 +588,160 @@ export default function HomePage() {
             ))}
           </div>
 
-          {/* ── Description ─────────────── */}
+          {/* ── Sélecteur de difficulté ③ ── */}
+          <div
+            className="w-full max-w-sm mb-6"
+            style={{ animation: "fadeSlideUp 0.5s 0.47s both" }}
+          >
+            <p
+              className="text-slate-500 text-xs uppercase tracking-widest mb-3 text-center"
+              style={{ fontFamily: FONT_MONO }}
+            >
+              ③ Difficulté
+            </p>
+
+            <div className="grid grid-cols-3 gap-2">
+              {DIFFICULTIES.map((diff, index) => (
+                <button
+                  key={diff.key}
+                  onClick={() => setSelectedDiffIndex(index)}
+                  className="relative flex flex-col items-center gap-1 py-3 px-2 rounded-xl transition-all duration-200 hover:scale-105 active:scale-95"
+                  style={{
+                    background: selectedDiffIndex === index
+                      ? `${diff.color}18`
+                      : "rgba(30,41,59,0.8)",
+                    border: selectedDiffIndex === index
+                      ? `2px solid ${diff.border}`
+                      : "2px solid rgba(100,116,139,0.2)",
+                    boxShadow: selectedDiffIndex === index
+                      ? `0 0 14px ${diff.shadow}`
+                      : "none",
+                  }}
+                >
+                  <span className="text-lg">{diff.emoji}</span>
+                  <span
+                    className="text-xs font-black tracking-wider"
+                    style={{
+                      fontFamily: FONT_MONO,
+                      color: selectedDiffIndex === index ? diff.color : "#64748b",
+                    }}
+                  >
+                    {diff.label}
+                  </span>
+                  <span
+                    className="text-xs leading-tight text-center"
+                    style={{ fontFamily: FONT_MONO, color: "#475569", fontSize: "9px" }}
+                  >
+                    {diff.description}
+                  </span>
+                  {selectedDiffIndex === index && (
+                    <span
+                      className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full"
+                      style={{ background: diff.color }}
+                    />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Description dynamique ─────────── */}
           <p
-            className="text-slate-400 text-sm md:text-base max-w-md mb-10 leading-relaxed"
+            className="text-slate-400 text-sm max-w-md mb-8 leading-relaxed text-center"
             style={{ animation: "fadeSlideUp 0.5s 0.4s both", fontFamily: FONT_MONO }}
           >
-            Le logo se déplace aléatoirement sur l&apos;écran.<br />
-            <span className="text-cyan-400">Attrape-le 5 fois</span> le plus vite possible.<br />
-            Bats le record. Prends la 1ère place.
+            {selectedMode.key === "solo" ? (
+              <>
+                <span className="text-cyan-400">1 objet</span> — Attrape-le{" "}
+                <span className="text-yellow-400 font-bold">5 fois</span> le plus vite possible.
+                <br />Bats le record. Prends la 1ère place.
+              </>
+            ) : (
+              <>
+                <span style={{ color: selectedMode.color }}>{selectedMode.objects} objets simultanés</span>{" "}
+                — Tu as <span className="text-yellow-400 font-bold">30 secondes</span>.
+                <br />Clique le maximum. Bats le score record.
+              </>
+            )}
             <span
               className="inline-block w-2 h-4 bg-yellow-400 ml-1 align-middle"
               style={{ animation: "blink 1s step-end infinite" }}
             />
           </p>
 
+          {/* ── Sélecteur de musique ④ ──────────
+              3 ambiances : Arcade / Lo-Fi / Epic
+              Passée dans l'URL → lue par game-page.tsx
+          ── */}
+          <div
+            className="w-full max-w-sm mb-8"
+            style={{ animation: "fadeSlideUp 0.5s 0.50s both" }}
+          >
+            <p
+              className="text-slate-500 text-xs uppercase tracking-widest mb-3 text-center"
+              style={{ fontFamily: FONT_MONO }}
+            >
+              ④ Musique
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {MUSIC_TRACKS.map((track, index) => (
+                <button
+                  key={track.key}
+                  onClick={() => setSelectedMusicIndex(index)}
+                  className="relative flex flex-col items-center gap-1 py-3 px-2 rounded-xl transition-all duration-200 hover:scale-105 active:scale-95"
+                  style={{
+                    background: selectedMusicIndex === index
+                      ? `${track.color}18`
+                      : "rgba(30,41,59,0.8)",
+                    border: selectedMusicIndex === index
+                      ? `2px solid ${track.border}`
+                      : "2px solid rgba(100,116,139,0.2)",
+                    boxShadow: selectedMusicIndex === index
+                      ? `0 0 14px ${track.shadow}`
+                      : "none",
+                  }}
+                >
+                  <span className="text-lg">{track.emoji}</span>
+                  <span
+                    className="text-xs font-black tracking-wider"
+                    style={{
+                      fontFamily: FONT_MONO,
+                      color: selectedMusicIndex === index ? track.color : "#64748b",
+                    }}
+                  >
+                    {track.label}
+                  </span>
+                  <span
+                    className="leading-tight text-center"
+                    style={{ fontFamily: FONT_MONO, color: "#475569", fontSize: "9px" }}
+                  >
+                    {track.description}
+                  </span>
+                  {selectedMusicIndex === index && (
+                    <span
+                      className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full"
+                      style={{ background: track.color }}
+                    />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* ── Boutons CTA ─────────────── */}
           <div
             className="flex flex-col sm:flex-row gap-4 mb-14"
             style={{ animation: "fadeSlideUp 0.5s 0.5s both" }}
           >
-            {/* Bouton principal : Jouer
-                On passe le logo choisi via un paramètre d'URL
-                ex: /game?logo=🚀
-                La page /game lira ce paramètre pour afficher le bon logo */}
+            {/* Bouton JOUER — passe mode + logo + difficulté dans l'URL */}
             <Link
-              href={`/game?logo=${encodeURIComponent(selectedLogo.emoji)}&color=${encodeURIComponent(selectedLogo.color)}&shadow=${encodeURIComponent(selectedLogo.shadow)}`}
-              className="btn-play font-arcade text-xl px-10 py-4 bg-yellow-400 text-black rounded-2xl tracking-wider"
+              href={`/game?logo=${encodeURIComponent(selectedLogo.emoji)}&image=${encodeURIComponent(selectedLogo.image)}&color=${encodeURIComponent(selectedLogo.color)}&shadow=${encodeURIComponent(selectedLogo.shadow)}&difficulty=${selectedDiff.key}&moveInterval=${selectedDiff.moveInterval}&logoSize=${selectedDiff.logoSize}&mode=${selectedMode.key}&objects=${selectedMode.objects}&timeLimit=${selectedMode.timeLimit ?? 0}&music=${selectedMusic.key}`}
+              className="btn-play font-arcade text-xl px-10 py-4 rounded-2xl tracking-wider text-black"
               style={{ background: selectedLogo.color }}
             >
               ▶ JOUER
             </Link>
 
-            {/* Bouton secondaire : Classement */}
             <Link
               href="/leaderboard"
               className="font-arcade text-xl px-10 py-4 bg-transparent border-2 border-slate-600 hover:border-yellow-400/60 text-slate-300 hover:text-yellow-400 rounded-2xl transition-all duration-200 tracking-wider hover:scale-105"
@@ -388,8 +755,8 @@ export default function HomePage() {
             className="grid grid-cols-3 gap-4 max-w-sm w-full"
             style={{ animation: "fadeSlideUp 0.5s 0.6s both" }}
           >
-            <StatCard value="5" label="Logos" color="text-yellow-400" delay="0.65s" />
-            <StatCard value="∞" label="Essais" color="text-cyan-400" delay="0.7s" />
+            <StatCard value={selectedMode.key === "solo" ? "5" : "30s"} label={selectedMode.key === "solo" ? "Clics" : "Chrono"} color="text-yellow-400" delay="0.65s" />
+            <StatCard value={String(selectedMode.objects)} label="Objets" color="text-cyan-400" delay="0.7s" />
             <StatCard value="#1" label="Objectif" color="text-pink-400" delay="0.75s" />
           </div>
 
