@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # 🎯 Chasse au Logo ! — v2
 
 > Défi 3 — Coordonnées et Aléatoire  
